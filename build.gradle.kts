@@ -81,5 +81,14 @@ kover {
                 classes("payout.PayoutApplicationKt")
             }
         }
+        verify {
+            rule {
+                minBound(80)
+            }
+        }
     }
+}
+
+tasks.named("check") {
+    dependsOn("koverVerify")
 }

@@ -1,0 +1,20 @@
+payout:
+  outbox:
+    poll-interval: 100ms
+  kafka:
+    retry:
+      attempts: 4
+      initial-delay: 200ms
+      multiplier: 2.0
+      max-delay: 1s
+    # Wider than retry: the result-before-SENT test needs time to publish the request in between.
+    result-retry:
+      attempts: 4
+      initial-delay: 500ms
+      multiplier: 2.0
+      max-delay: 2s
+
+logging:
+  level:
+    payout: info
+    org.springframework.kafka.retrytopic: warn

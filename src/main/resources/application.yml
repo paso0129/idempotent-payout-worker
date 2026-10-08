@@ -1,0 +1,75 @@
+spring:
+  application:
+    name: idempotent-payout-worker
+  datasource:
+    # Local defaults match compose.yaml. Override with env vars anywhere else.
+    url: ${PAYOUT_DB_URL:jdbc:postgresql://localhost:5432/payout}
+    username: ${PAYOUT_DB_USER:payout}
+    password: ${PAYOUT_DB_PASSWORD:payout}
+    hikari:
+      # A worker thread holds one connection across the bank call. Consumer threads: 2 main topics x 3
+      # + 10 retry/DLT topics x 1 = 16 at most; the rest is for HTTP and the outbox relay.
+      maximum-pool-size: 30
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${PAYOUT_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      # Each record may wait on the bank; keep a poll well inside max.poll.interval.ms (5 min).
+      max-poll-records: 50
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        # Keep every producer wait inside payout.outbox.send-timeout (5s), so the relay never holds
+        # outbox row locks for the client defaults (60s metadata wait, 2 min delivery).
+        # send() blocks at most this long when broker metadata is unavailable.
+        max.block.ms: 2000
+        request.timeout.ms: 2000
+        # Must be >= linger.ms + request.timeout.ms.
+        delivery.timeout.ms: 4000
+    listener:
+      concurrency: 3
+  mvc:
+    problemdetails:
+      enabled: true
+  task:
+    scheduling:
+      pool:
+        # Outbox relay and the demo result emitter should not queue behind each other.
+        size: 2
+
+payout:
+  outbox:
+    batch-size: 100
+    poll-interval: 500ms
+    send-timeout: 5s
+  kafka:
+    partitions: 3
+    replication-factor: 1
+    retry:
+      attempts: 4
+      initial-delay: 1s
+      multiplier: 2.0
+      max-delay: 30s
+    result-retry:
+      attempts: 6
+      initial-delay: 5s
+      multiplier: 3.0
+      max-delay: 5m
+    retry-concurrency: 1
+  reconciliation:
+    zone: Asia/Seoul
+  fake-bank:
+    # Demo only: an in-memory bank. Set false and provide a real BankGateway bean for real use.
+    enabled: true
+    emit-results: false
+    emit-interval: 1s
+
+logging:
+  level:
+    org.apache.kafka: warn

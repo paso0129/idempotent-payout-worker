@@ -2,6 +2,8 @@ package payout.application.port
 
 import payout.domain.BeneficiaryAccount
 import payout.domain.Money
+import payout.domain.reconciliation.BankStatementLine
+import java.time.Instant
 
 interface BankGateway {
     /**
@@ -35,3 +37,7 @@ class TransientBankException(message: String) : RetryableBankException(message)
 
 class BankTimeoutException(message: String) : RetryableBankException(message)
 
+/** Where the bank's list of executed transfers comes from (statement file, inquiry API, ...). */
+interface BankStatementSource {
+    fun statement(from: Instant, until: Instant): List<BankStatementLine>
+}

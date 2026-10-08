@@ -7,8 +7,10 @@ import payout.application.ApplyPayoutResultService
 import payout.application.GiveUpPayoutService
 import payout.application.PayoutQueryService
 import payout.application.ProcessPayoutService
+import payout.application.ReconciliationService
 import payout.application.RequestPayoutService
 import payout.application.port.BankGateway
+import payout.application.port.BankStatementSource
 import payout.application.port.PayoutEventOutbox
 import payout.application.port.PayoutRepository
 import payout.application.port.ProcessedMessageRepository
@@ -59,6 +61,13 @@ class ApplicationConfig {
     @Bean
     fun giveUpPayoutService(payouts: PayoutRepository, tx: TransactionRunner, clock: Clock) =
         GiveUpPayoutService(payouts, tx, clock)
+
+    @Bean
+    fun reconciliationService(
+        payouts: PayoutRepository,
+        bankStatement: BankStatementSource,
+        properties: ReconciliationProperties,
+    ) = ReconciliationService(payouts, bankStatement, properties.zone)
 
     private companion object {
         const val NANOS_PER_MICRO = 1_000L

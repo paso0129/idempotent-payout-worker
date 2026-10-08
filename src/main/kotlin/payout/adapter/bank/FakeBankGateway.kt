@@ -1,10 +1,12 @@
 package payout.adapter.bank
 
 import payout.application.port.BankGateway
+import payout.application.port.BankStatementSource
 import payout.application.port.BankTimeoutException
 import payout.application.port.TransferOutcome
 import payout.application.port.TransferRequest
 import payout.application.port.TransientBankException
+import payout.domain.reconciliation.BankStatementLine
 import java.time.Clock
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -31,18 +33,21 @@ data class ExecutedTransfer(
     val bankReference: String,
     val request: TransferRequest,
     val executedAt: Instant,
-)
+) {
+    fun toStatementLine() = BankStatementLine(bankReference, idempotencyKey, request.money, executedAt)
+}
 
 /**
  * In-memory bank that honours idempotency keys the way the worker expects a real one to: the first
  * request for a key decides the outcome, later requests with that key get the same answer back.
  * Behaviour per key can be scripted to simulate errors; unscripted calls succeed.
  */
-class FakeBankGateway(private val clock: Clock) : BankGateway {
+class FakeBankGateway(private val clock: Clock) : BankGateway, BankStatementSource {
     private val ledger = ConcurrentHashMap<String, LedgerEntry>()
     private val keyScripts = ConcurrentHashMap<String, ConcurrentLinkedQueue<FakeBankBehavior>>()
     private val accountScripts = ConcurrentHashMap<String, ConcurrentLinkedQueue<FakeBankBehavior>>()
     private val received = CopyOnWriteArrayList<TransferRequest>()
+    private val injectedLines = CopyOnWriteArrayList<BankStatementLine>()
     private val referenceSequence = AtomicLong()
 
     /**
@@ -77,6 +82,16 @@ class FakeBankGateway(private val clock: Clock) : BankGateway {
     fun receivedRequests(): List<TransferRequest> = received.toList()
 
     fun executedTransfers(): List<ExecutedTransfer> = ledger.values.mapNotNull { it.executed }
+
+    /** Executed transfers as the bank's statement shows them, plus any injected anomalies. */
+    override fun statement(from: Instant, until: Instant): List<BankStatementLine> =
+        (executedTransfers().map { it.toStatementLine() } + injectedLines)
+            .filter { !it.executedAt.isBefore(from) && it.executedAt.isBefore(until) }
+
+    /** A line that did not come through [transfer]: manual transfers, bank-side duplicates, wrong amounts. */
+    fun injectStatementLine(line: BankStatementLine) {
+        injectedLines.add(line)
+    }
 
     private fun nextBehavior(request: TransferRequest): FakeBankBehavior =
         keyScripts[request.idempotencyKey]?.poll()
